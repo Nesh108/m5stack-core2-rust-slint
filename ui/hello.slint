@@ -1,0 +1,73 @@
+export component HelloWorld inherits Window {
+    width: 320px;
+    height: 240px;
+    
+    in-out property <bool> toggled: false;
+    
+    background: toggled ? yellow : blue;
+    
+    // Animated circle
+    property <float> circle-x: 50;
+    property <float> circle-y: 50;
+    
+    animate circle-x { duration: 2.5s; easing: ease-in-out; }
+    animate circle-y { duration: 3.2s; easing: ease-in-out; }
+    
+    // Timer to continuously move circle
+    callback move-circle();
+    
+    Timer {
+        interval: 2500ms;
+        running: true;
+        triggered => {
+            circle-x = circle-x > 100 ? 50 : 270;
+            circle-y = circle-y > 100 ? 50 : 190;
+        }
+    }
+    
+    // Small moving circle
+    Rectangle {
+        x: circle-x * 1px;
+        y: circle-y * 1px;
+        width: 30px;
+        height: 30px;
+        background: white;
+        border-radius: 15px;
+    }
+    
+    // Interactive circle
+    TouchArea {
+        x: 130px;
+        y: 30px;
+        width: 60px;
+        height: 60px;
+        
+        clicked => {
+            toggled = !toggled;
+        }
+        
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: red;
+            border-radius: 30px;
+        }
+    }
+    
+    Rectangle {
+        x: 40px;
+        y: 140px;
+        width: 240px;
+        height: 40px;
+        background: green;
+        border-radius: 5px;
+    }
+    
+    Text {
+        text: "HELLO FROM SLINT v2";
+        x: 60px;
+        y: 155px;
+        color: black;
+        font-size: 18px;
+    }
+}
