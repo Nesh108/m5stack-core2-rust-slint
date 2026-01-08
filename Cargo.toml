@@ -1,12 +1,12 @@
 [package]
-name = "hw-hello-world"
+name = "m5stack-core2-rust-slint"
 version = "0.1.0"
 authors = ["Nesh108"]
 edition = "2021"
 resolver = "2"
 license = "MIT"
 description = "Slint UI framework on M5Stack Core2 using Rust"
-repository = "https://github.com/Nesh108/hw-hello-world"
+repository = "https://github.com/Nesh108/m5stack-core2-rust-slint"
 keywords = ["m5stack", "slint", "esp32", "embedded", "gui"]
 categories = ["embedded", "gui"]
 
