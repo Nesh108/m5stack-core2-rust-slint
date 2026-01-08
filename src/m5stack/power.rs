@@ -1,8 +1,18 @@
-use esp_idf_hal::i2c::I2cDriver;
-use crate::config::AXP192_ADDR;
+use esp_idf_hal::{i2c::I2cDriver, delay::FreeRtos};
+use crate::m5stack::config::AXP192_ADDR;
 
 const AXP192_GPIO12_SIGNAL: u8 = 0x94;
 const AXP192_GPIO1_CONTROL: u8 = 0x92;
+
+/// Initialize AXP192 power management for M5Stack Core2
+pub fn init_power(i2c: &mut I2cDriver) {
+    i2c.write(AXP192_ADDR, &[0x28, 0xCC], 1000).ok();
+    i2c.write(AXP192_ADDR, &[0x27, 0xDC], 1000).ok();
+    i2c.write(AXP192_ADDR, &[0x91, 0xF0], 1000).ok();
+    i2c.write(AXP192_ADDR, &[0x90, 0x02], 1000).ok();
+    i2c.write(AXP192_ADDR, &[0x96, 0x02], 1000).ok();
+    FreeRtos::delay_ms(200);
+}
 
 /// Initialize LED control via AXP192 GPIO1
 pub fn init_led(i2c: &mut I2cDriver) {

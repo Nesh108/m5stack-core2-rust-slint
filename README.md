@@ -1,79 +1,135 @@
-# Rust + Slint on M5Stack Core2
+# M5Stack Core2 with Slint UI and Rust
 
-A minimal working example of running Slint UI framework on M5Stack Core2 v1.1 using Rust.
-
-## Hardware
-
-- **Device**: M5Stack Core2 v1.1
-- **MCU**: ESP32 (Xtensa)
-- **Display**: ILI9342C, 320x240, SPI
-- **Touch**: FT6336, I2C
-
-## Prerequisites
-
-Install ESP Rust toolchain:
-
-```bash
-cargo install espup
-espup install
-source $HOME/export-esp.sh
-```
-
-Install flash tools:
-
-```bash
-cargo install espflash ldproxy
-```
-
-## Build and Flash
-
-```bash
-cargo run
-```
-
-This will compile, flash, and monitor the device.
-
-## Project Structure
-
-- `src/main.rs` - Main application loop with touch event handling
-- `src/config.rs` - Hardware configuration constants
-- `src/m5stack.rs` - M5Stack Core2 hardware abstraction (display, touch, power)
-- `src/slint_platform.rs` - Slint platform implementation for ESP32
-- `src/imu.rs` - MPU6886 IMU (accelerometer, gyroscope, temperature) driver
-- `src/axp192_led.rs` - AXP192 power management (LED control, battery monitoring)
-- `ui/hello.slint` - Slint UI definition
+A demonstration of using the Slint UI framework on M5Stack Core2 hardware, entirely in Rust.
 
 ## Features
 
-- **Fast Slint UI rendering** (~200ms per frame)
-- **Capacitive touch support** with FT6336 driver
-- **Interactive UI elements** - tap the red circle to toggle background color
-- **Button zones** - touch bottom area for button actions:
-  - **Button A** (left): Prints message to console
-  - **Button B** (center): Toggle LED on/off
-  - **Button C** (right): Display IMU data & battery stats
-- **IMU support** - MPU6886 accelerometer, gyroscope, and temperature sensor
-- **Battery monitoring** - AXP192 voltage reading and percentage calculation
-- **LED control** - AXP192 GPIO1 LED control
+- ✅ **Display:** ILI9342C TFT (320x240) via SPI with Slint UI framework
+- ✅ **Touch:** FT6336 capacitive touch controller
+- ✅ **IMU:** MPU6886 6-axis motion sensor
+- ✅ **Power:** AXP192 power management
+- ✅ **LED:** Onboard LED control via AXP192
+- ✅ **Audio:** I2S audio with NS4168 amplifier (musical scale playback)
 
-## Technical Notes
+## Button Functions
 
-### Memory Constraints
+- **BtnA (Left)** - Play musical scale (C-D-E-F-G-A-B-C)
+- **BtnB (Middle)** - Toggle LED
+- **BtnC (Right)** - Show IMU & Battery stats
 
-ESP32 has limited RAM (~200KB usable). The implementation uses chunked buffer transfer to avoid memory allocation failures while maintaining fast rendering.
+## Project Structure
 
-Chunk size can be adjusted in [`src/config.rs`](src/config.rs) - larger chunks render faster but use more memory.
+```
+src/
+├── main.rs              - Clean application entry point
+├── slint_platform.rs    - Slint platform integration
+├── m5stack/             - M5Stack Core2 hardware abstraction
+│   ├── mod.rs          - Module exports
+│   ├── config.rs       - Hardware configuration constants
+│   ├── display.rs      - ILI9342C display controller
+│   ├── touch.rs        - FT6336 touch controller + button zones
+│   ├── power.rs        - AXP192 power management + LED
+│   ├── imu.rs          - MPU6886 IMU sensor
+│   └── audio.rs        - I2S audio with NS4168 amplifier
+└── ui/
+    └── hello.slint     - Slint UI definition
+```
 
-### Rendering Performance
+## Hardware Configuration
 
-- SPI frequency: 26MHz (maximum stable for full-duplex)
-- Full screen update: ~200ms
-- Chunk size: 4KB (adjustable in config)
+### M5Stack Core2 Pins
 
-### Color Configuration
+**I2C (Sensors & Power):**
+- GPIO21: SDA
+- GPIO22: SCL
+- Devices: AXP192 (0x34), FT6336 (0x38), MPU6886 (0x68), NS4168 (0x4C)
 
-Display controller configured for BGR pixel order with inversion enabled. See [`src/m5stack.rs`](src/m5stack.rs) `init_display()` for details.
+**SPI (Display):**
+- GPIO18: SCK
+- GPIO23: MOSI
+- GPIO38: MISO
+- GPIO5: CS
+- GPIO15: DC
+
+**Audio I2S:**
+- GPIO12: BCK (Bit Clock)
+- GPIO0: WS (Word Select)
+- GPIO2: DATA (⚠️ shared with display - used temporarily)
+
+**Power & Peripherals:**
+- AXP192: Power management, LED control, battery monitoring
+- GPIO2: Audio amplifier enable (conflicts with display)
+
+## Audio Implementation
+
+The audio system (`src/m5stack/audio.rs`) is based on the Arduino M5Unified Speaker library:
+
+### Key Components:
+1. **I2S Hardware** - ESP32 I2S peripheral for digital audio
+2. **AXP192 GPIO2** - Critical power enable for NS4168 amplifier (register 0x93 = 0x06)
+3. **NS4168 Amplifier** - I2C-controlled Class D audio amplifier
+4. **Tone Generation** - Uses 16-sample sine wave from M5Unified
+
+### GPIO2 Conflict Solution:
+The audio module is created **on-demand** when BtnA is pressed:
+1. Audio module instantiated (takes GPIO2)
+2. Musical scale plays
+3. Audio module dropped (GPIO2 released to display)
+
+This causes brief display corruption during playback but allows both features to work.
+
+## Building and Flashing
+
+```bash
+# Build
+cargo build
+
+# Flash and monitor
+cargo espflash flash --monitor
+
+# Release build
+cargo build --release
+```
+
+## Dependencies
+
+- `esp-idf-svc` 0.50 - ESP-IDF service layer
+- `esp-idf-hal` 0.45 - ESP32 HAL
+- `esp-idf-sys` 0.36 - ESP-IDF bindings
+- `slint` 1.5 - UI framework
+- `embedded-graphics` 0.8
+- `display-interface` 0.5
+- `mipidsi` 0.8
+
+## M5Stack Libraries
+
+The `libraries/` directory contains M5Unified Arduino libraries used as reference:
+- M5Unified - Core M5Stack functionality
+- M5GFX - Graphics library
+- M5Utility - Utility functions
+
+These are not compiled but used to understand the low-level hardware initialization.
+
+## Audio Details
+
+Based on M5Unified `Speaker_Class.cpp`, the critical discovery was:
+- Arduino: `M5.Power.Axp192.setGPIO2(true)` enables speaker
+- Implementation: Write `0x06` to AXP192 register `0x93`
+
+Without this single I2C command, I2S sends data but no sound is produced.
 
 ## License
 
 MIT
+
+## Hardware
+
+M5Stack Core2:
+- ESP32 dual-core @ 240MHz
+- 16MB Flash
+- 8MB PSRAM
+- 320x240 ILI9342C TFT
+- FT6336 capacitive touch
+- MPU6886 IMU
+- AXP192 power management
+- NS4168 audio amplifier

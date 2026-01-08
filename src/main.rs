@@ -1,10 +1,7 @@
 extern crate alloc;
 
-mod config;
 mod m5stack;
 mod slint_platform;
-mod axp192_led;
-mod imu;
 
 use esp_idf_hal::{
     delay::FreeRtos,
@@ -21,6 +18,7 @@ use slint::PhysicalPosition;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use display_interface_spi::SPIInterface;
+use m5stack::*;
 
 slint::include_modules!();
 
@@ -32,21 +30,7 @@ enum TouchState {
 
 struct AppState {
     led_enabled: bool,
-    imu: imu::Imu,
-}
-
-fn check_button_zone(x: u16, y: u16) -> Option<&'static str> {
-    if y < 210 {
-        return None;
-    }
-    
-    if x < 107 {
-        Some("BtnA")
-    } else if x < 214 {
-        Some("BtnB")
-    } else {
-        Some("BtnC")
-    }
+    imu: Imu,
 }
 
 fn handle_button_press(
@@ -56,25 +40,33 @@ fn handle_button_press(
 ) {
     match button {
         "BtnA" => {
-            println!("BtnA: Button A clicked!");
+            println!("BtnA: Musical scale!");
+            play_musical_scale(i2c);
         }
         "BtnB" => {
             app_state.led_enabled = !app_state.led_enabled;
-            axp192_led::set_led(i2c, app_state.led_enabled);
+            set_led(i2c, app_state.led_enabled);
             println!("BtnB: LED {}", if app_state.led_enabled { "ON" } else { "OFF" });
         }
         "BtnC" => {
-            println!("BtnC: IMU & Battery Stats");
+            println!("BtnC: IMU & Battery");
             app_state.imu.print_stats(i2c);
             
-            if let Some(voltage) = axp192_led::read_battery_voltage(i2c) {
-                let percent = axp192_led::battery_percentage(voltage);
+            if let Some(voltage) = read_battery_voltage(i2c) {
+                let percent = battery_percentage(voltage);
                 println!("  Battery: {:.2}V ({}%)", voltage, percent);
-            } else {
-                println!("  Battery: Read failed");
             }
         }
         _ => {}
+    }
+}
+
+fn play_musical_scale(i2c: &mut I2cDriver) {
+    // Temporarily create audio, play scale, drop (releases GPIO2 for display)
+    if let Ok(audio_pin) = PinDriver::output(unsafe { esp_idf_hal::gpio::Gpio2::new() }) {
+        if let Ok(mut audio) = Audio::new(audio_pin, i2c) {
+            audio.play_scale();
+        }
     }
 }
 
@@ -84,7 +76,7 @@ fn process_touch_events(
     touch_state: &mut TouchState,
     app_state: &mut AppState,
 ) {
-    if let Some((x, y)) = m5stack::read_touch(i2c) {
+    if let Some((x, y)) = read_touch(i2c) {
         match touch_state {
             TouchState::None => {
                 *touch_state = TouchState::Pressed(x, y);
@@ -125,12 +117,8 @@ fn render_ui<DI: display_interface::WriteOnlyDataCommand>(
     buffer: &mut Vec<Rgb565Pixel>,
 ) {
     window.draw_if_needed(|renderer| {
-        renderer.render(buffer, config::DISPLAY_WIDTH as usize);
-        m5stack::transfer_buffer_to_display(
-            display_interface,
-            buffer,
-            config::TRANSFER_CHUNK_SIZE,
-        );
+        renderer.render(buffer, DISPLAY_WIDTH as usize);
+        transfer_buffer_to_display(display_interface, buffer, DISPLAY_TRANSFER_CHUNK_SIZE);
     });
 }
 
@@ -140,19 +128,20 @@ fn main() {
     
     let p = Peripherals::take().unwrap();
     
+    // I2C for sensors and power management
     let mut i2c = I2cDriver::new(
         p.i2c0,
         p.pins.gpio21,
         p.pins.gpio22,
-        &I2cConfig::new().baudrate(Hertz(config::I2C_BAUDRATE_HZ)),
+        &I2cConfig::new().baudrate(Hertz(I2C_BAUDRATE_HZ)),
     ).unwrap();
     
-    m5stack::init_power(&mut i2c);
-    axp192_led::init_led(&mut i2c);
+    // Initialize M5Stack Core2 hardware
+    init_power(&mut i2c);
+    init_led(&mut i2c);
+    let imu_driver = Imu::new(&mut i2c);
     
-    // Initialize IMU on shared I2C bus
-    let imu_driver = imu::Imu::new(&mut i2c);
-    
+    // SPI for display
     let spi = SpiDriver::new(
         p.spi2,
         p.pins.gpio18,
@@ -164,25 +153,22 @@ fn main() {
     let spi_device = SpiDeviceDriver::new(
         spi,
         Some(p.pins.gpio5),
-        &Config::new().baudrate(Hertz(config::SPI_BAUDRATE_HZ)),
+        &Config::new().baudrate(Hertz(SPI_BAUDRATE_HZ)),
     ).unwrap();
     
     let dc_pin = PinDriver::output(p.pins.gpio15).unwrap();
     let mut display = SPIInterface::new(spi_device, dc_pin);
+    init_display(&mut display);
     
-    m5stack::init_display(&mut display);
-    
-    let (platform, window) = slint_platform::M5StackPlatform::new(
-        config::DISPLAY_WIDTH,
-        config::DISPLAY_HEIGHT,
-    );
+    // Initialize Slint UI
+    let (platform, window) = slint_platform::M5StackPlatform::new(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     slint::platform::set_platform(platform).unwrap();
     
     let ui = HelloWorld::new().unwrap();
     ui.show().unwrap();
     
     let mut buffer = Vec::new();
-    buffer.resize((config::DISPLAY_WIDTH * config::DISPLAY_HEIGHT) as usize, Rgb565Pixel(0));
+    buffer.resize((DISPLAY_WIDTH * DISPLAY_HEIGHT) as usize, Rgb565Pixel(0));
     
     let mut touch_state = TouchState::None;
     let mut app_state = AppState {
@@ -190,10 +176,11 @@ fn main() {
         imu: imu_driver,
     };
     
+    // Main event loop
     loop {
         slint::platform::update_timers_and_animations();
         process_touch_events(&mut i2c, &window, &mut touch_state, &mut app_state);
         render_ui(&window, &mut display, &mut buffer);
-        FreeRtos::delay_ms(config::FRAME_TIME_MS);
+        FreeRtos::delay_ms(FRAME_TIME_MS);
     }
 }

@@ -15,4 +15,4 @@ pub const TARGET_FPS: u32 = 30;
 pub const FRAME_TIME_MS: u32 = 1000 / TARGET_FPS;
 
 // Display buffer transfer chunk size
-pub const TRANSFER_CHUNK_SIZE: usize = 4096;
+pub const DISPLAY_TRANSFER_CHUNK_SIZE: usize = 4096;

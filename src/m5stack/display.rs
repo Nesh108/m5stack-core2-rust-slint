@@ -1,18 +1,6 @@
-use esp_idf_hal::{
-    delay::FreeRtos,
-    i2c::I2cDriver,
-};
-use crate::config::{AXP192_ADDR, FT6336_ADDR};
+// ILI9342C display controller for M5Stack Core2
 
-/// Initialize AXP192 power management chip to enable display backlight
-pub fn init_power(i2c: &mut I2cDriver) {
-    i2c.write(AXP192_ADDR, &[0x28, 0xCC], 1000).ok();
-    i2c.write(AXP192_ADDR, &[0x27, 0xDC], 1000).ok();
-    i2c.write(AXP192_ADDR, &[0x91, 0xF0], 1000).ok();
-    i2c.write(AXP192_ADDR, &[0x90, 0x02], 1000).ok();
-    i2c.write(AXP192_ADDR, &[0x96, 0x02], 1000).ok();
-    FreeRtos::delay_ms(200);
-}
+use esp_idf_hal::delay::FreeRtos;
 
 /// Initialize ILI9342C display controller with proper color configuration
 pub fn init_display<DI: display_interface::WriteOnlyDataCommand>(di: &mut DI) {
@@ -31,25 +19,6 @@ pub fn init_display<DI: display_interface::WriteOnlyDataCommand>(di: &mut DI) {
     di.send_commands(DataFormat::U8(&[0x21])).ok();
     di.send_commands(DataFormat::U8(&[0x29])).ok();
     FreeRtos::delay_ms(10);
-}
-
-/// Read touch coordinates from FT6336 touch controller
-pub fn read_touch(i2c: &mut I2cDriver) -> Option<(u16, u16)> {
-    let mut buf = [0u8];
-    
-    if i2c.write_read(FT6336_ADDR, &[0x02], &mut buf, 1000).is_err() || buf[0] == 0 {
-        return None;
-    }
-    
-    let mut data = [0u8; 4];
-    if i2c.write_read(FT6336_ADDR, &[0x03], &mut data, 1000).is_err() {
-        return None;
-    }
-    
-    let x = (((data[0] & 0x0F) as u16) << 8) | (data[1] as u16);
-    let y = (((data[2] & 0x0F) as u16) << 8) | (data[3] as u16);
-    
-    Some((x, y))
 }
 
 /// Transfer Slint render buffer to display via SPI
