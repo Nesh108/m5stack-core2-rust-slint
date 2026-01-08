@@ -35,18 +35,26 @@ This will compile, flash, and monitor the device.
 
 ## Project Structure
 
-- `src/main.rs` - Main application loop
+- `src/main.rs` - Main application loop with touch event handling
 - `src/config.rs` - Hardware configuration constants
-- `src/m5stack.rs` - M5Stack Core2 hardware abstraction
+- `src/m5stack.rs` - M5Stack Core2 hardware abstraction (display, touch, power)
 - `src/slint_platform.rs` - Slint platform implementation for ESP32
+- `src/imu.rs` - MPU6886 IMU (accelerometer, gyroscope, temperature) driver
+- `src/axp192_led.rs` - AXP192 power management (LED control, battery monitoring)
 - `ui/hello.slint` - Slint UI definition
 
 ## Features
 
-- Fast Slint UI rendering (~200ms per frame)
-- Capacitive touch support
-- Interactive UI elements
-- Tap the red circle to toggle background color
+- **Fast Slint UI rendering** (~200ms per frame)
+- **Capacitive touch support** with FT6336 driver
+- **Interactive UI elements** - tap the red circle to toggle background color
+- **Button zones** - touch bottom area for button actions:
+  - **Button A** (left): Prints message to console
+  - **Button B** (center): Toggle LED on/off
+  - **Button C** (right): Display IMU data & battery stats
+- **IMU support** - MPU6886 accelerometer, gyroscope, and temperature sensor
+- **Battery monitoring** - AXP192 voltage reading and percentage calculation
+- **LED control** - AXP192 GPIO1 LED control
 
 ## Technical Notes
 
@@ -69,7 +77,3 @@ Display controller configured for BGR pixel order with inversion enabled. See [`
 ## License
 
 MIT
-
-## Author
-
-Nesh108

@@ -3,6 +3,8 @@ extern crate alloc;
 mod config;
 mod m5stack;
 mod slint_platform;
+mod axp192_led;
+mod imu;
 
 use esp_idf_hal::{
     delay::FreeRtos,
@@ -28,10 +30,12 @@ enum TouchState {
     Pressed(u16, u16),
 }
 
-/// Check if touch is in one of the button zones (A, B, C) at bottom of screen
+struct AppState {
+    led_enabled: bool,
+    imu: imu::Imu,
+}
+
 fn check_button_zone(x: u16, y: u16) -> Option<&'static str> {
-    // M5Stack Core2 virtual buttons are in bottom zone (y > 210)
-    // Button A: x 0-106, Button B: x 107-213, Button C: x 214-320
     if y < 210 {
         return None;
     }
@@ -45,10 +49,40 @@ fn check_button_zone(x: u16, y: u16) -> Option<&'static str> {
     }
 }
 
+fn handle_button_press(
+    button: &str,
+    i2c: &mut I2cDriver,
+    app_state: &mut AppState,
+) {
+    match button {
+        "BtnA" => {
+            println!("BtnA: Button A clicked!");
+        }
+        "BtnB" => {
+            app_state.led_enabled = !app_state.led_enabled;
+            axp192_led::set_led(i2c, app_state.led_enabled);
+            println!("BtnB: LED {}", if app_state.led_enabled { "ON" } else { "OFF" });
+        }
+        "BtnC" => {
+            println!("BtnC: IMU & Battery Stats");
+            app_state.imu.print_stats(i2c);
+            
+            if let Some(voltage) = axp192_led::read_battery_voltage(i2c) {
+                let percent = axp192_led::battery_percentage(voltage);
+                println!("  Battery: {:.2}V ({}%)", voltage, percent);
+            } else {
+                println!("  Battery: Read failed");
+            }
+        }
+        _ => {}
+    }
+}
+
 fn process_touch_events(
     i2c: &mut I2cDriver,
     window: &Rc<MinimalSoftwareWindow>,
     touch_state: &mut TouchState,
+    app_state: &mut AppState,
 ) {
     if let Some((x, y)) = m5stack::read_touch(i2c) {
         match touch_state {
@@ -56,7 +90,8 @@ fn process_touch_events(
                 *touch_state = TouchState::Pressed(x, y);
                 
                 if let Some(button) = check_button_zone(x, y) {
-                    println!("{} pressed at ({}, {})", button, x, y);
+                    println!("Button: {}", button);
+                    handle_button_press(button, i2c, app_state);
                 }
                 
                 let position = PhysicalPosition::new(x as i32, y as i32).to_logical(1.0);
@@ -113,6 +148,10 @@ fn main() {
     ).unwrap();
     
     m5stack::init_power(&mut i2c);
+    axp192_led::init_led(&mut i2c);
+    
+    // Initialize IMU on shared I2C bus
+    let imu_driver = imu::Imu::new(&mut i2c);
     
     let spi = SpiDriver::new(
         p.spi2,
@@ -146,10 +185,14 @@ fn main() {
     buffer.resize((config::DISPLAY_WIDTH * config::DISPLAY_HEIGHT) as usize, Rgb565Pixel(0));
     
     let mut touch_state = TouchState::None;
+    let mut app_state = AppState {
+        led_enabled: false,
+        imu: imu_driver,
+    };
     
     loop {
         slint::platform::update_timers_and_animations();
-        process_touch_events(&mut i2c, &window, &mut touch_state);
+        process_touch_events(&mut i2c, &window, &mut touch_state, &mut app_state);
         render_ui(&window, &mut display, &mut buffer);
         FreeRtos::delay_ms(config::FRAME_TIME_MS);
     }
